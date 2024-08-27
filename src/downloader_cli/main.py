@@ -8,6 +8,7 @@ from prompt_toolkit.completion import PathCompleter
 from .commands import ytdlp
 from .utils.config import get_playlist_file
 from .commands.generate_playlist import main as generate_playlist_main
+from .commands.podman_run import podman_run
 
 install_rich_traceback()
 
@@ -85,6 +86,8 @@ def generate_playlist(
     """Generate an M3U8 playlist and serve the files via HTTP."""
     generate_playlist_main(directory, ip, port, use_localhost)
 
+
+app.command()(podman_run)
 
 if __name__ == "__main__":
     app()
