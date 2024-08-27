@@ -11,6 +11,8 @@ dependencies = [
     "pyaml>=24.7.0",
     "toml>=0.10.2",
     "prompt-toolkit>=3.0.47",
+    "ipaddress>=1.0.23",
+    "requests>=2.32.3",
 ]
 readme = "README.md"
 requires-python = ">= 3.8"
