@@ -7,6 +7,7 @@ from prompt_toolkit import prompt
 from prompt_toolkit.completion import PathCompleter
 from .commands import ytdlp
 from .utils.config import get_playlist_file
+from .commands.generate_playlist import main as generate_playlist_main
 
 install_rich_traceback()
 
@@ -68,6 +69,21 @@ def download(
 
     # Call the ytdlp.main() function with the necessary arguments
     ytdlp.main(str(path), playlist_file)
+
+
+@app.command()
+def generate_playlist(
+    directory: Path = typer.Option(
+        None, "--directory", "-d", help="Directory containing the files"
+    ),
+    ip: str = typer.Option(None, "--ip", help="Public IP of the VPS (optional)"),
+    port: int = typer.Option(8000, "--port", "-p", help="Port to serve the files"),
+    use_localhost: bool = typer.Option(
+        False, "--localhost", help="Use localhost instead of public IP"
+    ),
+):
+    """Generate an M3U8 playlist and serve the files via HTTP."""
+    generate_playlist_main(directory, ip, port, use_localhost)
 
 
 if __name__ == "__main__":
