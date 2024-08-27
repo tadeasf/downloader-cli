@@ -1,4 +1,4 @@
-# downloader-cli
+# Downloader CLI
 
 A command-line interface tool for downloading and managing playlists.
 
@@ -19,32 +19,12 @@ A command-line interface tool for downloading and managing playlists.
    cd downloader-cli
    ```
 
-3. Set up the virtual environment and install dependencies:
+3. Install the package in editable mode:
 
    ```sh
    rye sync
+   rye run install
    ```
-
-4. Build and install the package locally:
-
-   ```sh
-   rye build
-   pip install dist/*.whl
-   ```
-
-5. Run the CLI commands:
-
-   - Generate a playlist:
-
-     ```sh
-     downloader generate-playlist --directory /path/to/files
-     ```
-
-   - Download using yt-dlp or aria2c:
-
-     ```sh
-     downloader download --path /path/to/download
-     ```
 
 ### Using Podman
 
@@ -55,6 +35,12 @@ A command-line interface tool for downloading and managing playlists.
    ```
 
 2. Run the CLI commands:
+
+   - Generate a Podman command:
+
+     ```sh
+     downloader podman-run
+     ```
 
    - Generate a playlist:
 
@@ -68,27 +54,35 @@ A command-line interface tool for downloading and managing playlists.
      podman run -it --rm -v /host/path:/container/path downloader-cli download --path /container/path
      ```
 
-## Commands
+## Available Commands
 
-### generate-playlist
+- `generate-playlist`: Generate an M3U8 playlist and serve the files via HTTP.
+- `download`: Download files using yt-dlp or aria2c.
+- `podman-run`: Interactively generate a Podman command to run downloader-cli.
 
-Generates an M3U8 playlist and serves the files via HTTP.
+For more details on each command, use the `--help` option:
 
-Options:
+```sh
+    downloader generate-playlist --help
+    downloader download --help
+    downloader podman-run --help
+```
 
-- `--directory`, `-d`: Directory containing the files
-- `--ip`: Public IP of the VPS (optional)
-- `--port`, `-p`: Port to serve the files (default: 8000)
-- `--localhost`: Use localhost instead of public IP
+## Configuration
 
-### download
+The default settings for yt-dlp and aria2c can be configured in the `config.py` file.
 
-Downloads files using either yt-dlp or aria2c.
+## Dependencies
 
-Options:
+- Python 3.12+
+- Rye
+- Podman (for containerized usage)
+- tmux (for background downloads)
 
-- `--path`, `-p`: Directory to download files
+## Contributing
 
-## Note
+Contributions are welcome! Please feel free to submit a Pull Request.
 
-When using Podman, make sure to adjust the volume mounting (`-v` option) to access files on your host system.
+## License
+
+This project is licensed under the MIT License - see the LICENSE file for details.
