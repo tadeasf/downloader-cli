@@ -1,3 +1,17 @@
+# Copyright 2024 tadeasfort
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     https://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
 import typer
 from typing import Optional
 from pathlib import Path
@@ -9,6 +23,7 @@ from .commands import ytdlp
 from .utils.config import get_playlist_file
 from .commands.generate_playlist import main as generate_playlist_main
 from .commands.podman_run import podman_run
+from .commands.mpv import mpv
 
 install_rich_traceback()
 
@@ -88,6 +103,7 @@ def generate_playlist(
 
 
 app.command()(podman_run)
+app.command()(mpv)
 
 if __name__ == "__main__":
     app()

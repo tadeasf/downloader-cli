@@ -1,3 +1,17 @@
+# Copyright 2024 tadeasfort
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     https://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
 import os
 import typer
 from pathlib import Path
@@ -6,8 +20,6 @@ import socketserver
 import threading
 import ipaddress
 import requests
-from prompt_toolkit import prompt
-from prompt_toolkit.completion import PathCompleter
 
 
 def get_public_ip() -> str:
@@ -25,26 +37,6 @@ def validate_ip(ip: str) -> str:
         return ip
     except ValueError:
         raise typer.BadParameter("Invalid IP address")
-
-
-def get_directory() -> Path:
-    while True:
-        directory = (
-            Path(
-                prompt(
-                    "Enter the directory containing the files: ",
-                    completer=PathCompleter(),
-                )
-            )
-            .expanduser()
-            .resolve()
-        )
-        if directory.is_dir():
-            return directory
-        else:
-            typer.echo(
-                f"Error: {directory} is not a valid directory. Please try again."
-            )
 
 
 def generate_m3u8(directory: Path, ip: str, port: int, use_localhost: bool) -> str:
@@ -71,7 +63,10 @@ def start_http_server(directory: str, port: int):
 
 def main(
     directory: Path = typer.Option(
-        None, "--directory", "-d", help="Directory containing the files"
+        ".",
+        "--directory",
+        "-d",
+        help="Directory containing the files (default: current directory)",
     ),
     ip: str = typer.Option(None, "--ip", help="Public IP of the VPS (optional)"),
     port: int = typer.Option(8000, "--port", "-p", help="Port to serve the files"),
@@ -80,8 +75,11 @@ def main(
     ),
 ):
     """Generate an M3U8 playlist and serve the files via HTTP."""
-    if directory is None:
-        directory = get_directory()
+    directory = Path(directory).expanduser().resolve()
+
+    if not directory.is_dir():
+        typer.echo(f"Error: {directory} is not a valid directory.")
+        raise typer.Exit(code=1)
 
     if not use_localhost:
         if ip is None:
