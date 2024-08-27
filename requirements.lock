@@ -48,5 +48,7 @@ typing-extensions==4.12.2
     # via typer
 urllib3==2.2.2
     # via requests
+watchdog==5.0.0
+    # via downloader-cli
 wcwidth==0.2.13
     # via prompt-toolkit
