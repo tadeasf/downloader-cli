@@ -12,5 +12,17 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-from . import config  # noqa: F401
-from . import network  # noqa: F401
+import socket
+
+
+def get_host_ip() -> str:
+    try:
+        # This doesn't actually create a connection,
+        # but allows us to get the host IP
+        s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+        s.connect(("8.8.8.8", 80))
+        ip = s.getsockname()[0]
+        s.close()
+        return ip
+    except Exception:
+        return "127.0.0.1"
