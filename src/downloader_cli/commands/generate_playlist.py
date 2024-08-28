@@ -22,13 +22,14 @@ from starlette.applications import Starlette
 from starlette.responses import HTMLResponse, FileResponse, PlainTextResponse
 from starlette.routing import Route
 from starlette.middleware import Middleware
-from starlette.middleware.cors import CORSMiddleware
+from starlette.middleware.base import BaseHTTPMiddleware
 import uvicorn
-import mimetypes
-import logging
 import html as html_module
 from typing import List
 from ..utils.config import get_config_value
+import subprocess
+import logging
+from datetime import datetime
 
 logging.basicConfig(level=logging.DEBUG)
 logger = logging.getLogger(__name__)
@@ -71,7 +72,6 @@ VIDEO_EXTENSIONS = {
     ".f4a",
     ".f4b",
 }
-
 IMAGE_EXTENSIONS = {
     ".jpg",
     ".jpeg",
@@ -137,52 +137,178 @@ def generate_m3u8(
     return playlist_path
 
 
+def get_file_info(file_path: Path) -> dict:
+    stat = file_path.stat()
+    file_info = {
+        "name": file_path.name,
+        "size": stat.st_size,
+        "created_at": datetime.fromtimestamp(stat.st_ctime).strftime(
+            "%Y-%m-%d %H:%M:%S"
+        ),
+        "extension": file_path.suffix.lower(),
+    }
+
+    if file_info["extension"] in VIDEO_EXTENSIONS:
+        try:
+            result = subprocess.run(
+                [
+                    "ffprobe",
+                    "-v",
+                    "error",
+                    "-show_entries",
+                    "format=duration",
+                    "-of",
+                    "default=noprint_wrappers=1:nokey=1",
+                    str(file_path),
+                ],
+                capture_output=True,
+                text=True,
+            )
+            duration = float(result.stdout)
+            file_info["duration"] = f"{int(duration // 60)}:{int(duration % 60):02d}"
+        except subprocess.CalledProcessError:
+            file_info["duration"] = "N/A"
+        except ValueError:
+            file_info["duration"] = "N/A"
+
+    return file_info
+
+
 async def handle_root_request(request):
     directories = request.app.state.directories
-    html_content = "<h1>File List</h1>"
+    files = []
     for directory in directories:
-        html_content += f"<h2>{directory}</h2><ul>"
-        for root, _, files in os.walk(directory):
-            for file in files:
-                if file.lower().endswith(
-                    tuple(VIDEO_EXTENSIONS.union(IMAGE_EXTENSIONS))
-                ):
-                    relative_path = os.path.relpath(root, directory.parent)
-                    file_url = f"/{relative_path}/{file}"
-                    html_content += (
-                        f'<li><a href="{file_url}">{html_module.escape(file)}</a></li>'
-                    )
-        html_content += "</ul>"
-    html_content += '<p><a href="/playlist.m3u8">Download M3U8 Playlist</a></p>'
-    return HTMLResponse(html_content)
+        files.extend([get_file_info(f) for f in directory.glob("*") if f.is_file()])
+
+    files.sort(key=lambda x: x["created_at"], reverse=True)
+
+    css = """
+    <style>
+        body {
+            font-family: 'JetBrains Mono', monospace;
+            background-color: #1e1e2e;
+            color: #cdd6f4;
+            margin: 0;
+            padding: 20px;
+        }
+        h1 {
+            color: #cba6f7;
+            text-align: center;
+        }
+        .button-container {
+            display: flex;
+            justify-content: center;
+            margin-bottom: 20px;
+        }
+        .button {
+            background-color: #cba6f7;
+            color: #1e1e2e;
+            border: none;
+            padding: 10px 20px;
+            margin: 0 10px;
+            cursor: pointer;
+            font-family: 'JetBrains Mono', monospace;
+            font-weight: bold;
+        }
+        table {
+            width: 100%;
+            border-collapse: collapse;
+        }
+        th, td {
+            padding: 10px;
+            text-align: left;
+            border-bottom: 1px solid #45475a;
+        }
+        th {
+            background-color: #313244;
+            color: #cba6f7;
+        }
+        tr:hover {
+            background-color: #313244;
+        }
+    </style>
+    """
+
+    content = f"""
+    <!DOCTYPE html>
+    <html lang="en">
+    <head>
+        <meta charset="UTF-8">
+        <meta name="viewport" content="width=device-width, initial-scale=1.0">
+        <title>File Server</title>
+        {css}
+    </head>
+    <body>
+        <h1>🚀 File Server</h1>
+        <div class="button-container">
+            <a href="/playlist.m3u8" download><button class="button">⬇️ Download Playlist</button></a>
+            <a href="/raw-playlist"><button class="button">👁️ View Raw Playlist</button></a>
+        </div>
+        <table>
+            <tr>
+                <th>File Name</th>
+                <th>Size</th>
+                <th>Created At</th>
+                <th>Duration</th>
+            </tr>
+    """
+
+    for file in files:
+        content += f"""
+            <tr>
+                <td>{html_module.escape(file['name'])}</td>
+                <td>{file['size'] // 1024 // 1024} MB</td>
+                <td>{file['created_at']}</td>
+                <td>{file.get('duration', 'N/A')}</td>
+            </tr>
+        """
+
+    content += """
+        </table>
+    </body>
+    </html>
+    """
+
+    return HTMLResponse(content)
+
+
+async def handle_raw_playlist(request):
+    playlist_path = Path(request.app.state.directories[0]) / "playlist.m3u8"
+    if playlist_path.exists():
+        with open(playlist_path, "r") as f:
+            content = f.read()
+        return PlainTextResponse(content)
+    else:
+        return PlainTextResponse("Playlist not found", status_code=404)
 
 
 async def handle_file_request(request):
     file_path = request.path_params["file_path"]
     directories = request.app.state.directories
     for directory in directories:
-        full_path = directory.parent / file_path
+        full_path = directory / file_path
         if full_path.is_file():
-            mime_type, _ = mimetypes.guess_type(str(full_path))
-            headers = {"Content-Type": mime_type} if mime_type else None
-            return FileResponse(str(full_path), headers=headers)
+            return FileResponse(full_path)
     return PlainTextResponse("File not found", status_code=404)
+
+
+class IPWhitelistMiddleware(BaseHTTPMiddleware):
+    async def dispatch(self, request, call_next):
+        if not check_ip_whitelist(request):
+            return PlainTextResponse("Access denied", status_code=403)
+        response = await call_next(request)
+        return response
 
 
 def start_http_server(directories: List[Path], ip: str, port: int):
     routes = [
         Route("/", handle_root_request),
+        Route("/raw-playlist", handle_raw_playlist),
         Route("/{file_path:path}", handle_file_request),
     ]
 
-    whitelisted_ips = get_whitelisted_ips()
     middleware = [
-        Middleware(
-            CORSMiddleware,
-            allow_origins=whitelisted_ips if whitelisted_ips else ["*"],
-            allow_methods=["*"],
-            allow_headers=["*"],
-        ),
+        Middleware(IPWhitelistMiddleware),
     ]
 
     app = Starlette(
@@ -196,10 +322,11 @@ def start_http_server(directories: List[Path], ip: str, port: int):
         f"Serving files from directories: {', '.join(str(d) for d in directories)}"
     )
     logger.info(f"Playlist available at http://{ip}:{port}/playlist.m3u8")
+    whitelisted_ips = get_whitelisted_ips()
     if whitelisted_ips:
         logger.info(f"Whitelisted IPs: {', '.join(whitelisted_ips)}")
     else:
-        logger.info("No IP whitelist configured, allowing all origins")
+        logger.info("No IP whitelist configured")
     print("Access log:")
 
     uvicorn.run(app, host=ip, port=port)
@@ -247,3 +374,9 @@ def main(
 
 if __name__ == "__main__":
     typer.run(main)
+
+
+def check_ip_whitelist(request):
+    client_ip = request.client.host
+    whitelisted_ips = get_whitelisted_ips()
+    return not whitelisted_ips or client_ip in whitelisted_ips
