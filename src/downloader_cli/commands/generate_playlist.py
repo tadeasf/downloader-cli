@@ -22,6 +22,7 @@ from aiohttp import web
 import asyncio
 import mimetypes
 import aiofiles
+from datetime import datetime
 
 
 def get_public_ip() -> str:
@@ -55,9 +56,17 @@ def generate_m3u8(directory: Path, ip: str, port: int, use_localhost: bool) -> s
     return str(playlist_path)
 
 
+async def log_access(request, file_path):
+    client_ip = request.remote
+    timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    print(f"[{timestamp}] Client IP: {client_ip} accessed file: {file_path}")
+
+
 async def handle_file_request(request):
     file_path = request.match_info["file_path"]
     full_path = os.path.join(str(request.app["directory"]), file_path)
+
+    await log_access(request, file_path)
 
     if not os.path.exists(full_path) or not os.path.isfile(full_path):
         return web.Response(status=404, text="File not found")
@@ -103,6 +112,7 @@ async def start_http_server(directory: Path, ip: str, port: int):
     await site.start()
 
     print(f"Serving at http://{ip}:{port}")
+    print("Access log:")
 
     # Keep the server running
     while True:
