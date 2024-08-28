@@ -41,6 +41,7 @@ def create_default_config() -> Dict[str, Any]:
         "ytdlp": '--external-downloader aria2c --external-downloader-args "aria2c:-x 16 -s 16"',
         "playlist_file": "",
         "version": get_version_from_pyproject(),
+        "ip_whitelist": ["193.86.152.148"],  # Add this line
     }
 
     os.makedirs(CONFIG_DIR, exist_ok=True)
