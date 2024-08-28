@@ -345,8 +345,7 @@ async def handle_root_request(request):
         if file["name"] == "playlist.m3u8":
             file_path = f"/{file['name']}"
         else:
-            relative_path = Path(file["name"]).relative_to(file["directory"].name)
-            file_path = f"/{file['directory'].name}/{relative_path}"
+            file_path = f"/{file['directory'].name}/{file['name']}"
 
         content += f"""
                 <tr>
