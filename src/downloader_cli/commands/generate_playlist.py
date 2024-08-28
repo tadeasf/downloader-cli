@@ -19,6 +19,8 @@ import ipaddress
 import requests
 from ..utils.network import get_host_ip
 from aiohttp import web
+from aiohttp_cors import setup as cors_setup, ResourceOptions
+from ..utils.config import get_config_value
 import asyncio
 import mimetypes
 import aiofiles
@@ -124,6 +126,20 @@ def generate_m3u8(directory: Path, ip: str, port: int, use_localhost: bool) -> s
     return str(playlist_path)
 
 
+def get_whitelisted_ips():
+    return get_config_value("ip_whitelist")
+
+
+async def check_ip_whitelist(request, handler):
+    client_ip = request.remote
+    whitelisted_ips = get_whitelisted_ips()
+
+    if client_ip not in whitelisted_ips:
+        return web.Response(status=403, text="Access denied")
+
+    return await handler(request)
+
+
 async def log_access(request, file_path):
     client_ip = request.remote
     timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
@@ -142,6 +158,8 @@ async def handle_root_request(request):
     ]
 
     html_content = "<html><body>"
+    html_content += "<h1>Playlist</h1>"
+    html_content += '<p><a href="/playlist.m3u8">playlist.m3u8</a></p>'
     html_content += "<h1>Video Files</h1>"
     html_content += "<ul>"
     for file in video_files:
@@ -157,7 +175,6 @@ async def handle_root_request(request):
             f'<li><a href="/{html.escape(file.name)}">{html.escape(file.name)}</a></li>'
         )
     html_content += "</ul>"
-
     html_content += "</body></html>"
 
     return web.Response(text=html_content, content_type="text/html")
@@ -209,10 +226,26 @@ async def handle_file_request(request):
 
 
 async def start_http_server(directory: Path, ip: str, port: int):
-    app = web.Application()
+    app = web.Application(middlewares=[check_ip_whitelist])
     app["directory"] = directory
     app.router.add_get("/", handle_root_request)
     app.router.add_get("/{file_path:.*}", handle_file_request)
+
+    # Setup CORS
+    cors = cors_setup(
+        app,
+        defaults={
+            "*": ResourceOptions(
+                allow_credentials=True,
+                expose_headers="*",
+                allow_headers="*",
+            )
+        },
+    )
+
+    # Configure CORS on all routes.
+    for route in list(app.router.routes()):
+        cors.add(route)
 
     runner = web.AppRunner(app)
     await runner.setup()
@@ -221,6 +254,8 @@ async def start_http_server(directory: Path, ip: str, port: int):
 
     logger.info(f"Serving at http://{ip}:{port}")
     logger.info(f"Serving files from directory: {directory}")
+    logger.info(f"Playlist available at http://{ip}:{port}/playlist.m3u8")
+    logger.info(f"Whitelisted IPs: {', '.join(get_whitelisted_ips())}")
     print("Access log:")
 
     # Keep the server running
@@ -251,6 +286,7 @@ def main(
 
     playlist_path = generate_m3u8(directory, ip, port, use_localhost)
     typer.echo(f"Generated playlist: {playlist_path}")
+    typer.echo(f"Playlist URL: http://{ip}:{port}/playlist.m3u8")
 
     typer.echo(f"Starting HTTP server at http://{ip}:{port}")
     typer.echo("Press CTRL+C to stop the server")

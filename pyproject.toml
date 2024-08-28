@@ -1,6 +1,6 @@
 [project]
 name = "downloader-cli"
-version = "1.17.0"
+version = "1.18.0"
 description = "Downloader CLI"
 dependencies = [
     "typer>=0.9.0",
@@ -12,6 +12,7 @@ dependencies = [
     "watchdog>=5.0.0",
     "aiohttp>=3.10.5",
     "aiofiles>=24.1.0",
+    "aiohttp-cors>=0.7.0",
 ]
 readme = "README.md"
 license = "GPL-3.0-or-later"
