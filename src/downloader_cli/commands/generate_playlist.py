@@ -24,6 +24,7 @@ import mimetypes
 import aiofiles
 from datetime import datetime
 import logging
+import html
 
 logging.basicConfig(level=logging.DEBUG)
 logger = logging.getLogger(__name__)
@@ -102,7 +103,6 @@ def generate_m3u8(directory: Path, ip: str, port: int, use_localhost: bool) -> s
     playlist_content = "#EXTM3U\n"
     host = "localhost" if use_localhost else ip
     video_files = []
-    image_files = []
 
     logger.debug(f"Scanning directory: {directory}")
     for file in sorted(directory.glob("*")):
@@ -111,9 +111,6 @@ def generate_m3u8(directory: Path, ip: str, port: int, use_localhost: bool) -> s
             if ext in VIDEO_EXTENSIONS:
                 video_files.append(file)
                 logger.debug(f"Added video file to playlist: {file}")
-            elif ext in IMAGE_EXTENSIONS:
-                image_files.append(file)
-                logger.debug(f"Recognized image file: {file}")
 
     # Add video files to the playlist
     for file in video_files:
@@ -131,6 +128,39 @@ async def log_access(request, file_path):
     client_ip = request.remote
     timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
     print(f"[{timestamp}] Client IP: {client_ip} accessed file: {file_path}")
+
+
+async def handle_root_request(request):
+    directory = request.app["directory"]
+    files = sorted(directory.glob("*"))
+
+    video_files = [
+        f for f in files if f.is_file() and f.suffix.lower() in VIDEO_EXTENSIONS
+    ]
+    image_files = [
+        f for f in files if f.is_file() and f.suffix.lower() in IMAGE_EXTENSIONS
+    ]
+
+    html_content = "<html><body>"
+    html_content += "<h1>Video Files</h1>"
+    html_content += "<ul>"
+    for file in video_files:
+        html_content += (
+            f'<li><a href="/{html.escape(file.name)}">{html.escape(file.name)}</a></li>'
+        )
+    html_content += "</ul>"
+
+    html_content += "<h1>Image Files</h1>"
+    html_content += "<ul>"
+    for file in image_files:
+        html_content += (
+            f'<li><a href="/{html.escape(file.name)}">{html.escape(file.name)}</a></li>'
+        )
+    html_content += "</ul>"
+
+    html_content += "</body></html>"
+
+    return web.Response(text=html_content, content_type="text/html")
 
 
 async def handle_file_request(request):
@@ -181,6 +211,7 @@ async def handle_file_request(request):
 async def start_http_server(directory: Path, ip: str, port: int):
     app = web.Application()
     app["directory"] = directory
+    app.router.add_get("/", handle_root_request)
     app.router.add_get("/{file_path:.*}", handle_file_request)
 
     runner = web.AppRunner(app)
