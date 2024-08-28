@@ -15,12 +15,12 @@
 import os
 import typer
 from pathlib import Path
-import http.server
-import socketserver
-import threading
 import ipaddress
 import requests
 from ..utils.network import get_host_ip
+from aiohttp import web
+import asyncio
+import mimetypes
 
 
 def get_public_ip() -> str:
@@ -54,16 +54,64 @@ def generate_m3u8(directory: Path, ip: str, port: int, use_localhost: bool) -> s
     return str(playlist_path)
 
 
-def start_http_server(directory: str, ip: str, port: int):
-    os.chdir(directory)
-    handler = http.server.SimpleHTTPRequestHandler
-    with socketserver.TCPServer((ip, port), handler) as httpd:
-        print(f"Serving at {ip}:{port}")
-        httpd.serve_forever()
+async def handle_file_request(request):
+    file_path = request.match_info["file_path"]
+    full_path = os.path.join(str(request.app["directory"]), file_path)
+
+    if not os.path.exists(full_path) or not os.path.isfile(full_path):
+        return web.Response(status=404, text="File not found")
+
+    file_size = os.path.getsize(full_path)
+    mime_type, _ = mimetypes.guess_type(full_path)
+
+    headers = {
+        "Content-Type": mime_type or "application/octet-stream",
+        "Accept-Ranges": "bytes",
+    }
+
+    if "range" in request.headers:
+        try:
+            range_header = request.headers["range"].strip().lower()
+            range_match = range_header.split("=")[1]
+            start, end = map(str.strip, range_match.split("-"))
+            start = int(start)
+            end = int(end) if end else file_size - 1
+            chunk_size = end - start + 1
+
+            headers["Content-Range"] = f"bytes {start}-{end}/{file_size}"
+            headers["Content-Length"] = str(chunk_size)
+
+            async with open(full_path, "rb") as f:
+                await f.seek(start)
+                chunk = await f.read(chunk_size)
+                return web.Response(body=chunk, headers=headers, status=206)
+        except ValueError:
+            pass
+
+    return web.FileResponse(full_path, headers=headers)
+
+
+async def start_http_server(directory: Path, ip: str, port: int):
+    app = web.Application()
+    app["directory"] = directory
+    app.router.add_get("/{file_path:.*}", handle_file_request)
+
+    runner = web.AppRunner(app)
+    await runner.setup()
+    site = web.TCPSite(runner, ip, port)
+    await site.start()
+
+    print(f"Serving at http://{ip}:{port}")
+
+    # Keep the server running
+    while True:
+        await asyncio.sleep(3600)  # Sleep for an hour
 
 
 def main(
-    directory: Path,
+    directory: Path = typer.Option(
+        ..., "--directory", "-d", help="Directory containing the files"
+    ),
     ip: str = typer.Option(None, "--ip", help="IP to bind the server to (optional)"),
     port: int = typer.Option(8000, "--port", "-p", help="Port to serve the files"),
     use_localhost: bool = typer.Option(
@@ -81,17 +129,11 @@ def main(
     playlist_path = generate_m3u8(directory, ip, port, use_localhost)
     typer.echo(f"Generated playlist: {playlist_path}")
 
-    server_thread = threading.Thread(
-        target=start_http_server, args=(str(directory), ip, port)
-    )
-    server_thread.daemon = True
-    server_thread.start()
-
-    typer.echo(f"HTTP server started at http://{ip}:{port}")
+    typer.echo(f"Starting HTTP server at http://{ip}:{port}")
     typer.echo("Press CTRL+C to stop the server")
 
     try:
-        server_thread.join()
+        asyncio.run(start_http_server(directory, ip, port))
     except KeyboardInterrupt:
         typer.echo("Server stopped")
 
