@@ -30,7 +30,6 @@ from ..utils.config import get_config_value
 import subprocess
 import logging
 from datetime import datetime
-import asyncio
 from functools import lru_cache
 
 logging.basicConfig(level=logging.DEBUG)
@@ -234,9 +233,23 @@ async def handle_root_request(request):
             background-color: #313244;
             color: #cba6f7;
             cursor: pointer;
+            position: relative;
         }
         th:hover {
             background-color: #45475a;
+        }
+        th::after {
+            content: '';
+            position: absolute;
+            right: 8px;
+            top: 50%;
+            transform: translateY(-50%);
+        }
+        th.asc::after {
+            content: '▲';
+        }
+        th.desc::after {
+            content: '▼';
         }
         tr:hover {
             background-color: #313244;
@@ -253,70 +266,47 @@ async def handle_root_request(request):
 
     javascript = """
     <script>
+    let sortedData = {};
+
     function sortTable(n) {
-        var table, rows, switching, i, x, y, shouldSwitch, dir, switchcount = 0;
-        table = document.getElementById("fileTable");
-        switching = true;
-        dir = "asc";
-        while (switching) {
-            switching = false;
-            rows = table.rows;
-            for (i = 1; i < (rows.length - 1); i++) {
-                shouldSwitch = false;
-                x = rows[i].getElementsByTagName("TD")[n];
-                y = rows[i + 1].getElementsByTagName("TD")[n];
-                if (dir == "asc") {
-                    if (n === 1) { // Size column
-                        if (Number(x.innerHTML.split(' ')[0]) > Number(y.innerHTML.split(' ')[0])) {
-                            shouldSwitch = true;
-                            break;
-                        }
-                    } else if (n === 3) { // Duration column
-                        if (x.innerHTML === 'N/A') continue;
-                        if (y.innerHTML === 'N/A') {
-                            shouldSwitch = true;
-                            break;
-                        }
-                        if (x.innerHTML > y.innerHTML) {
-                            shouldSwitch = true;
-                            break;
-                        }
-                    } else if (x.innerHTML.toLowerCase() > y.innerHTML.toLowerCase()) {
-                        shouldSwitch = true;
-                        break;
-                    }
-                } else if (dir == "desc") {
-                    if (n === 1) { // Size column
-                        if (Number(x.innerHTML.split(' ')[0]) < Number(y.innerHTML.split(' ')[0])) {
-                            shouldSwitch = true;
-                            break;
-                        }
-                    } else if (n === 3) { // Duration column
-                        if (y.innerHTML === 'N/A') continue;
-                        if (x.innerHTML === 'N/A') {
-                            shouldSwitch = true;
-                            break;
-                        }
-                        if (x.innerHTML < y.innerHTML) {
-                            shouldSwitch = true;
-                            break;
-                        }
-                    } else if (x.innerHTML.toLowerCase() < y.innerHTML.toLowerCase()) {
-                        shouldSwitch = true;
-                        break;
-                    }
-                }
-            }
-            if (shouldSwitch) {
-                rows[i].parentNode.insertBefore(rows[i + 1], rows[i]);
-                switching = true;
-                switchcount ++;
-            } else {
-                if (switchcount == 0 && dir == "asc") {
-                    dir = "desc";
-                    switching = true;
-                }
-            }
+        const table = document.getElementById("fileTable");
+        const tbody = table.getElementsByTagName("tbody")[0];
+        const rows = Array.from(tbody.rows);
+        
+        if (sortedData[n] === undefined) {
+            sortedData[n] = {
+                asc: rows.slice().sort((a, b) => compareRows(a, b, n)),
+                desc: rows.slice().sort((a, b) => compareRows(b, a, n))
+            };
+        }
+
+        const currentOrder = tbody.getAttribute("data-order") || "asc";
+        const newOrder = currentOrder === "asc" ? "desc" : "asc";
+        
+        sortedData[n][newOrder].forEach(row => tbody.appendChild(row));
+        
+        tbody.setAttribute("data-order", newOrder);
+        
+        // Update sorting indicators
+        const headers = table.getElementsByTagName("th");
+        for (let i = 0; i < headers.length; i++) {
+            headers[i].classList.remove("asc", "desc");
+        }
+        headers[n].classList.add(newOrder);
+    }
+
+    function compareRows(row1, row2, n) {
+        const cell1 = row1.cells[n].innerText;
+        const cell2 = row2.cells[n].innerText;
+
+        if (n === 1) { // Size column
+            return Number(cell1.split(' ')[0]) - Number(cell2.split(' ')[0]);
+        } else if (n === 3) { // Duration column
+            if (cell2 === 'N/A') return -1;
+            if (cell1 === 'N/A') return 1;
+            return cell1.localeCompare(cell2);
+        } else {
+            return cell1.localeCompare(cell2);
         }
     }
     </script>
@@ -339,25 +329,29 @@ async def handle_root_request(request):
             <a href="/raw-playlist"><button class="button">👁️ View Raw Playlist</button></a>
         </div>
         <table id="fileTable">
-            <tr>
-                <th onclick="sortTable(0)">File Name</th>
-                <th onclick="sortTable(1)">Size</th>
-                <th onclick="sortTable(2)">Created At</th>
-                <th onclick="sortTable(3)">Duration</th>
-            </tr>
+            <thead>
+                <tr>
+                    <th onclick="sortTable(0)">File Name</th>
+                    <th onclick="sortTable(1)">Size</th>
+                    <th onclick="sortTable(2)">Created At</th>
+                    <th onclick="sortTable(3)">Duration</th>
+                </tr>
+            </thead>
+            <tbody>
     """
 
     for file in files:
         content += f"""
-            <tr>
-                <td><a href="/{file['name']}" target="_blank" class="file-link">{html_module.escape(file['name'])}</a></td>
-                <td>{file['size'] // 1024 // 1024} MB</td>
-                <td>{file['created_at']}</td>
-                <td>{file.get('duration', 'N/A')}</td>
-            </tr>
+                <tr>
+                    <td><a href="/{file['name']}" target="_blank" class="file-link">{html_module.escape(file['name'])}</a></td>
+                    <td>{file['size'] // 1024 // 1024} MB</td>
+                    <td>{file['created_at']}</td>
+                    <td>{file.get('duration', 'N/A')}</td>
+                </tr>
         """
 
     content += """
+            </tbody>
         </table>
     </body>
     </html>
