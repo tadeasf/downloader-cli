@@ -7,6 +7,7 @@ import uvicorn
 from prompt_toolkit import prompt
 from prompt_toolkit.completion import PathCompleter
 from ..utils.network import get_host_ip
+from datetime import datetime
 
 app = FastAPI()
 
@@ -18,7 +19,16 @@ def generate_playlist(directory: Path, ip: str, port: int) -> Path:
         url = f"http://{ip}:{port}/videos/{relative_path}"
         playlist_content += f"#EXTINF:-1,{file.name}\n{url}\n"
 
-    playlist_path = directory / "playlist.m3u8"
+    # Generate the playlist filename
+    date_str = datetime.now().strftime("%d-%m-%Y")
+    index = 1
+    while True:
+        playlist_filename = f"{ip}_{date_str}_{index}.m3u8"
+        playlist_path = directory / playlist_filename
+        if not playlist_path.exists():
+            break
+        index += 1
+
     playlist_path.write_text(playlist_content)
     return playlist_path
 
@@ -63,7 +73,7 @@ def serve_watch_playlist():
             </head>
             <body>
                 <h1>Video Playlist</h1>
-                <a href="/playlist.m3u8">Download Playlist</a>
+                <a href="/{playlist_path.name}">Download Playlist</a>
                 <ul>
                     {video_list}
                 </ul>
@@ -71,7 +81,7 @@ def serve_watch_playlist():
         </html>
         """)
 
-    @app.get("/playlist.m3u8")
+    @app.get("/{playlist_path.name}")
     async def get_playlist():
         return FileResponse(playlist_path)
 
