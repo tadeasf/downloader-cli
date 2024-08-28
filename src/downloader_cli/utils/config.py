@@ -53,7 +53,10 @@ def create_default_config() -> Dict[str, Any]:
 
 def get_config_value(key: str) -> Any:
     config = load_config()
-    return config.get(key)
+    value = config.get(key)
+    if key == "ip_whitelist" and isinstance(value, str):
+        return [value]  # Return a list even if there's only one IP
+    return value
 
 
 def get_version_from_pyproject() -> str:

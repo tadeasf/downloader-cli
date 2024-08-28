@@ -136,7 +136,13 @@ async def log_access(request, file_path):
 
 
 def get_whitelisted_ips():
-    return get_config_value("ip_whitelist")
+    whitelist = get_config_value("ip_whitelist")
+    if isinstance(whitelist, list):
+        return whitelist
+    elif isinstance(whitelist, str):
+        return [whitelist]
+    else:
+        return []  # Return an empty list if the value is not a list or string
 
 
 async def check_ip_whitelist(request, handler):
@@ -255,7 +261,11 @@ async def start_http_server(directories: List[Path], ip: str, port: int):
         f"Serving files from directories: {', '.join(str(d) for d in directories)}"
     )
     logger.info(f"Playlist available at http://{ip}:{port}/playlist.m3u8")
-    logger.info(f"Whitelisted IPs: {', '.join(get_whitelisted_ips())}")
+    whitelisted_ips = get_whitelisted_ips()
+    if whitelisted_ips:
+        logger.info(f"Whitelisted IPs: {', '.join(whitelisted_ips)}")
+    else:
+        logger.info("No IP whitelist configured")
     print("Access log:")
 
     # Keep the server running
