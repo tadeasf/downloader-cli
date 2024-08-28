@@ -23,6 +23,10 @@ import asyncio
 import mimetypes
 import aiofiles
 from datetime import datetime
+import logging
+
+logging.basicConfig(level=logging.DEBUG)
+logger = logging.getLogger(__name__)
 
 VIDEO_EXTENSIONS = {
     ".mp4",
@@ -100,13 +104,16 @@ def generate_m3u8(directory: Path, ip: str, port: int, use_localhost: bool) -> s
     video_files = []
     image_files = []
 
+    logger.debug(f"Scanning directory: {directory}")
     for file in sorted(directory.glob("*")):
         if file.is_file() and file.name != "playlist.m3u8":
             ext = file.suffix.lower()
             if ext in VIDEO_EXTENSIONS:
                 video_files.append(file)
+                logger.debug(f"Added video file to playlist: {file}")
             elif ext in IMAGE_EXTENSIONS:
                 image_files.append(file)
+                logger.debug(f"Recognized image file: {file}")
 
     # Add video files to the playlist
     for file in video_files:
@@ -116,6 +123,7 @@ def generate_m3u8(directory: Path, ip: str, port: int, use_localhost: bool) -> s
     with open(playlist_path, "w") as f:
         f.write(playlist_content)
 
+    logger.debug(f"Generated playlist at: {playlist_path}")
     return str(playlist_path)
 
 
@@ -129,13 +137,19 @@ async def handle_file_request(request):
     file_path = request.match_info["file_path"]
     full_path = os.path.join(str(request.app["directory"]), file_path)
 
+    logger.debug(f"Requested file: {file_path}")
+    logger.debug(f"Full path: {full_path}")
+
     await log_access(request, file_path)
 
     if not os.path.exists(full_path) or not os.path.isfile(full_path):
+        logger.error(f"File not found: {full_path}")
         return web.Response(status=404, text="File not found")
 
     file_size = os.path.getsize(full_path)
     mime_type, _ = mimetypes.guess_type(full_path)
+
+    logger.debug(f"File size: {file_size}, MIME type: {mime_type}")
 
     headers = {
         "Content-Type": mime_type or "application/octet-stream",
@@ -174,7 +188,8 @@ async def start_http_server(directory: Path, ip: str, port: int):
     site = web.TCPSite(runner, ip, port)
     await site.start()
 
-    print(f"Serving at http://{ip}:{port}")
+    logger.info(f"Serving at http://{ip}:{port}")
+    logger.info(f"Serving files from directory: {directory}")
     print("Access log:")
 
     # Keep the server running
@@ -199,6 +214,9 @@ def main(
         ip = get_host_ip()
     else:
         ip = validate_ip(ip)
+
+    directory = Path(directory).resolve()
+    logger.info(f"Using directory: {directory}")
 
     playlist_path = generate_m3u8(directory, ip, port, use_localhost)
     typer.echo(f"Generated playlist: {playlist_path}")
