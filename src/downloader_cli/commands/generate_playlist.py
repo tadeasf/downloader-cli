@@ -131,7 +131,14 @@ def generate_m3u8(
                     file_url = f"{base_url}/{directory.name}/{relative_path}/{file}"
                     playlist_content += f"#EXTINF:-1,{file}\n{file_url}\n"
 
-    playlist_path = directories[0].parent / "playlist.m3u8"
+    # Find the next available index for the playlist file
+    index = 1
+    while True:
+        playlist_path = directories[0].parent / f"playlist_{index}.m3u8"
+        if not playlist_path.exists():
+            break
+        index += 1
+
     with open(playlist_path, "w") as f:
         f.write(playlist_content)
 
@@ -343,7 +350,7 @@ async def handle_root_request(request):
 
     for file in files:
         if file["name"] == "playlist.m3u8":
-            file_path = f"/{file['name']}"
+            file_path = f"/playlist.m3u8"
         else:
             file_path = f"/{file['directory'].name}/{file['name']}"
 
@@ -380,13 +387,13 @@ async def handle_file_request(request):
     file_path = request.path_params["file_path"]
     directories = request.app.state.directories
 
-    if file_path == "playlist.m3u8":
-        playlist_path = directories[0].parent / "playlist.m3u8"
+    if file_path.startswith("playlist_") and file_path.endswith(".m3u8"):
+        playlist_path = directories[0].parent / file_path
         if playlist_path.is_file():
             return FileResponse(playlist_path)
 
     for directory in directories:
-        full_path = directory / Path(file_path).relative_to(directory.name)
+        full_path = directory / file_path
         if full_path.is_file():
             return FileResponse(full_path)
 
@@ -425,10 +432,10 @@ def start_http_server(directories: List[Path], ip: str, port: int):
             [get_file_info(f, directory) for f in directory.glob("*") if f.is_file()]
         )
 
-    # Add playlist.m3u8 to file_info
-    playlist_path = directories[0].parent / "playlist.m3u8"
-    if playlist_path.is_file():
-        file_info.append(get_file_info(playlist_path, playlist_path.parent))
+    # Add all playlist files to file_info
+    parent_dir = directories[0].parent
+    for playlist_file in parent_dir.glob("playlist_*.m3u8"):
+        file_info.append(get_file_info(playlist_file, parent_dir))
 
     file_info.sort(key=lambda x: x["created_at"], reverse=True)
     app.state.file_info = file_info
