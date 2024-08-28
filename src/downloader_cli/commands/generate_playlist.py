@@ -23,6 +23,7 @@ from starlette.responses import HTMLResponse, FileResponse, PlainTextResponse
 from starlette.routing import Route
 from starlette.middleware import Middleware
 from starlette.middleware.base import BaseHTTPMiddleware
+from urllib.parse import unquote, quote
 import uvicorn
 import html as html_module
 from typing import List
@@ -128,7 +129,8 @@ def generate_m3u8(
                     tuple(VIDEO_EXTENSIONS.union(IMAGE_EXTENSIONS))
                 ):
                     relative_path = os.path.relpath(root, directory)
-                    file_url = f"{base_url}/{directory.name}/{relative_path}/{file}"
+                    encoded_path = quote(f"{directory.name}/{relative_path}/{file}")
+                    file_url = f"{base_url}/{encoded_path}"
                     playlist_content += f"#EXTINF:-1,{file}\n{file_url}\n"
 
     # Find the next available index for the playlist file
@@ -333,7 +335,7 @@ async def handle_root_request(request):
     <body>
         <h1>🚀 File Server</h1>
         <div class="button-container">
-            <a href="/playlist.m3u8" download><button class="button">⬇️ Download Playlist</button></a>
+            <a href="/{request.app.state.playlist_file.name}" download><button class="button">⬇️ Download Playlist</button></a>
             <a href="/raw-playlist"><button class="button">👁️ View Raw Playlist</button></a>
         </div>
         <table id="fileTable">
@@ -350,7 +352,7 @@ async def handle_root_request(request):
 
     for file in files:
         if file["name"] == "playlist.m3u8":
-            file_path = f"/playlist.m3u8"
+            file_path = "/playlist.m3u8"
         else:
             file_path = f"/{file['directory'].name}/{file['name']}"
 
@@ -384,7 +386,7 @@ async def handle_raw_playlist(request):
 
 
 async def handle_file_request(request):
-    file_path = request.path_params["file_path"]
+    file_path = unquote(request.path_params["file_path"])
     directories = request.app.state.directories
 
     if file_path.startswith("playlist_") and file_path.endswith(".m3u8"):
@@ -394,6 +396,12 @@ async def handle_file_request(request):
 
     for directory in directories:
         full_path = directory / file_path
+        if full_path.is_file():
+            return FileResponse(full_path)
+
+        # Try to find the file by ignoring the directory name in the URL
+        relative_path = Path(*Path(file_path).parts[1:])
+        full_path = directory / relative_path
         if full_path.is_file():
             return FileResponse(full_path)
 
@@ -408,7 +416,7 @@ class IPWhitelistMiddleware(BaseHTTPMiddleware):
         return response
 
 
-def start_http_server(directories: List[Path], ip: str, port: int):
+def start_http_server(directories: List[Path], ip: str, port: int, playlist_path: Path):
     routes = [
         Route("/", handle_root_request),
         Route("/raw-playlist", handle_raw_playlist),
@@ -424,6 +432,7 @@ def start_http_server(directories: List[Path], ip: str, port: int):
         middleware=middleware,
     )
     app.state.directories = directories
+    app.state.playlist_file = playlist_path
 
     # Calculate file info at startup
     file_info = []
@@ -444,7 +453,7 @@ def start_http_server(directories: List[Path], ip: str, port: int):
     logger.info(
         f"Serving files from directories: {', '.join(str(d) for d in directories)}"
     )
-    logger.info(f"Playlist available at http://{ip}:{port}/playlist.m3u8")
+    logger.info(f"Playlist available at http://{ip}:{port}/{playlist_path.name}")
     whitelisted_ips = get_whitelisted_ips()
     if whitelisted_ips:
         logger.info(f"Whitelisted IPs: {', '.join(whitelisted_ips)}")
@@ -484,13 +493,13 @@ def main(
 
     playlist_path = generate_m3u8(directories, ip, port, use_localhost)
     typer.echo(f"Generated playlist: {playlist_path}")
-    typer.echo(f"Playlist URL: http://{ip}:{port}/playlist.m3u8")
+    typer.echo(f"Playlist URL: http://{ip}:{port}/{playlist_path.name}")
 
     typer.echo(f"Starting HTTP server at http://{ip}:{port}")
     typer.echo("Press CTRL+C to stop the server")
 
     try:
-        start_http_server(directories, ip, port)
+        start_http_server(directories, ip, port, playlist_path)
     except KeyboardInterrupt:
         typer.echo("Server stopped")
 
