@@ -127,8 +127,8 @@ def generate_m3u8(
                 if file.lower().endswith(
                     tuple(VIDEO_EXTENSIONS.union(IMAGE_EXTENSIONS))
                 ):
-                    relative_path = os.path.relpath(root, directory.parent)
-                    file_url = f"{base_url}/{relative_path}/{file}"
+                    relative_path = os.path.relpath(root, directory)
+                    file_url = f"{base_url}/{directory.name}/{relative_path}/{file}"
                     playlist_content += f"#EXTINF:-1,{file}\n{file_url}\n"
 
     playlist_path = directories[0].parent / "playlist.m3u8"
@@ -139,7 +139,7 @@ def generate_m3u8(
 
 
 @lru_cache(maxsize=1000)
-def get_file_info(file_path: Path) -> dict:
+def get_file_info(file_path: Path, directory: Path) -> dict:
     stat = file_path.stat()
     file_info = {
         "name": file_path.name,
@@ -148,6 +148,7 @@ def get_file_info(file_path: Path) -> dict:
             "%Y-%m-%d %H:%M:%S"
         ),
         "extension": file_path.suffix.lower(),
+        "directory": directory,
     }
 
     if file_info["extension"] in VIDEO_EXTENSIONS:
@@ -184,7 +185,7 @@ async def calculate_file_info(directories: List[Path]):
                 file_path.is_file()
                 and file_path.suffix.lower() in VIDEO_EXTENSIONS.union(IMAGE_EXTENSIONS)
             ):
-                file_info_list.append(get_file_info(file_path))
+                file_info_list.append(get_file_info(file_path, directory))
     return sorted(file_info_list, key=lambda x: x["created_at"], reverse=True)
 
 
@@ -341,9 +342,10 @@ async def handle_root_request(request):
     """
 
     for file in files:
+        relative_path = Path(file["name"]).relative_to(file["directory"].name)
         content += f"""
                 <tr>
-                    <td><a href="/{file['name']}" target="_blank" class="file-link">{html_module.escape(file['name'])}</a></td>
+                    <td><a href="/{file['directory'].name}/{relative_path}" target="_blank" class="file-link">{html_module.escape(file['name'])}</a></td>
                     <td>{file['size'] // 1024 // 1024} MB</td>
                     <td>{file['created_at']}</td>
                     <td>{file.get('duration', 'N/A')}</td>
@@ -374,7 +376,7 @@ async def handle_file_request(request):
     file_path = request.path_params["file_path"]
     directories = request.app.state.directories
     for directory in directories:
-        full_path = directory / file_path
+        full_path = directory / Path(file_path).relative_to(directory.name)
         if full_path.is_file():
             return FileResponse(full_path)
     return PlainTextResponse("File not found", status_code=404)
