@@ -342,10 +342,15 @@ async def handle_root_request(request):
     """
 
     for file in files:
-        relative_path = Path(file["name"]).relative_to(file["directory"].name)
+        if file["name"] == "playlist.m3u8":
+            file_path = f"/{file['name']}"
+        else:
+            relative_path = Path(file["name"]).relative_to(file["directory"].name)
+            file_path = f"/{file['directory'].name}/{relative_path}"
+
         content += f"""
                 <tr>
-                    <td><a href="/{file['directory'].name}/{relative_path}" target="_blank" class="file-link">{html_module.escape(file['name'])}</a></td>
+                    <td><a href="{file_path}" target="_blank" class="file-link">{html_module.escape(file['name'])}</a></td>
                     <td>{file['size'] // 1024 // 1024} MB</td>
                     <td>{file['created_at']}</td>
                     <td>{file.get('duration', 'N/A')}</td>
@@ -375,10 +380,17 @@ async def handle_raw_playlist(request):
 async def handle_file_request(request):
     file_path = request.path_params["file_path"]
     directories = request.app.state.directories
+
+    if file_path == "playlist.m3u8":
+        playlist_path = directories[0].parent / "playlist.m3u8"
+        if playlist_path.is_file():
+            return FileResponse(playlist_path)
+
     for directory in directories:
         full_path = directory / Path(file_path).relative_to(directory.name)
         if full_path.is_file():
             return FileResponse(full_path)
+
     return PlainTextResponse("File not found", status_code=404)
 
 
@@ -413,6 +425,12 @@ def start_http_server(directories: List[Path], ip: str, port: int):
         file_info.extend(
             [get_file_info(f, directory) for f in directory.glob("*") if f.is_file()]
         )
+
+    # Add playlist.m3u8 to file_info
+    playlist_path = directories[0].parent / "playlist.m3u8"
+    if playlist_path.is_file():
+        file_info.append(get_file_info(playlist_path, playlist_path.parent))
+
     file_info.sort(key=lambda x: x["created_at"], reverse=True)
     app.state.file_info = file_info
 
