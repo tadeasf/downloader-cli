@@ -40,16 +40,16 @@ def podman_run():
 
     container_path = get_path("Enter the path inside the container: ", default="/data")
 
-    base_cmd = (
-        f"podman run -it --rm -v {host_path}:{container_path} downloader-cli {command}"
-    )
+    base_cmd = f"podman run -it --rm -p 8000:8000 -v {host_path}:{container_path} downloader-cli {command}"
 
     if command == "generate-playlist":
         directory = get_path(
             "Enter the directory containing the files (relative to the container path): ",
             default=".",
         )
-        full_cmd = f"{base_cmd} --directory {os.path.join(container_path, directory)}"
+        use_localhost = prompt("Use localhost? (y/n): ").lower() == "y"
+        localhost_flag = "--localhost" if use_localhost else ""
+        full_cmd = f"{base_cmd} --directory {os.path.join(container_path, directory)} {localhost_flag}"
     elif command == "download":
         download_path = get_path(
             "Enter the download path (relative to the container path): "

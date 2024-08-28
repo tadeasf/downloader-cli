@@ -20,6 +20,7 @@ import socketserver
 import threading
 import ipaddress
 import requests
+from ..utils.network import get_host_ip
 
 
 def get_public_ip() -> str:
@@ -53,47 +54,35 @@ def generate_m3u8(directory: Path, ip: str, port: int, use_localhost: bool) -> s
     return str(playlist_path)
 
 
-def start_http_server(directory: str, port: int):
+def start_http_server(directory: str, ip: str, port: int):
     os.chdir(directory)
     handler = http.server.SimpleHTTPRequestHandler
-    with socketserver.TCPServer(("", port), handler) as httpd:
-        print(f"Serving at port {port}")
+    with socketserver.TCPServer((ip, port), handler) as httpd:
+        print(f"Serving at {ip}:{port}")
         httpd.serve_forever()
 
 
 def main(
-    directory: Path = typer.Option(
-        ".",
-        "--directory",
-        "-d",
-        help="Directory containing the files (default: current directory)",
-    ),
-    ip: str = typer.Option(None, "--ip", help="Public IP of the VPS (optional)"),
+    directory: Path,
+    ip: str = typer.Option(None, "--ip", help="IP to bind the server to (optional)"),
     port: int = typer.Option(8000, "--port", "-p", help="Port to serve the files"),
     use_localhost: bool = typer.Option(
-        False, "--localhost", help="Use localhost instead of public IP"
+        False, "--localhost", help="Use localhost instead of host IP"
     ),
 ):
     """Generate an M3U8 playlist and serve the files via HTTP."""
-    directory = Path(directory).expanduser().resolve()
-
-    if not directory.is_dir():
-        typer.echo(f"Error: {directory} is not a valid directory.")
-        raise typer.Exit(code=1)
-
-    if not use_localhost:
-        if ip is None:
-            ip = get_public_ip()
-        else:
-            ip = validate_ip(ip)
-    else:
+    if use_localhost:
         ip = "localhost"
+    elif ip is None:
+        ip = get_host_ip()
+    else:
+        ip = validate_ip(ip)
 
     playlist_path = generate_m3u8(directory, ip, port, use_localhost)
     typer.echo(f"Generated playlist: {playlist_path}")
 
     server_thread = threading.Thread(
-        target=start_http_server, args=(str(directory), port)
+        target=start_http_server, args=(str(directory), ip, port)
     )
     server_thread.daemon = True
     server_thread.start()

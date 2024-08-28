@@ -92,14 +92,29 @@ def generate_playlist(
     directory: Path = typer.Option(
         None, "--directory", "-d", help="Directory containing the files"
     ),
-    ip: str = typer.Option(None, "--ip", help="Public IP of the VPS (optional)"),
+    ip: str = typer.Option(None, "--ip", help="IP to bind the server to (optional)"),
     port: int = typer.Option(8000, "--port", "-p", help="Port to serve the files"),
     use_localhost: bool = typer.Option(
-        False, "--localhost", help="Use localhost instead of public IP"
+        False, "--localhost", help="Use localhost instead of host IP"
     ),
 ):
     """Generate an M3U8 playlist and serve the files via HTTP."""
+    if directory is None:
+        directory = get_directory()
+
+    if not directory.is_dir():
+        typer.echo(f"Error: {directory} is not a valid directory.")
+        raise typer.Exit(code=1)
+
     generate_playlist_main(directory, ip, port, use_localhost)
+
+
+def get_directory() -> Path:
+    directory = prompt(
+        "Enter the directory containing the files: ",
+        completer=PathCompleter(),
+    )
+    return Path(directory).expanduser().resolve()
 
 
 app.command()(podman_run)
