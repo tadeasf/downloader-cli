@@ -21,6 +21,7 @@ from ..utils.network import get_host_ip
 from aiohttp import web
 import asyncio
 import mimetypes
+import aiofiles
 
 
 def get_public_ip() -> str:
@@ -81,7 +82,7 @@ async def handle_file_request(request):
             headers["Content-Range"] = f"bytes {start}-{end}/{file_size}"
             headers["Content-Length"] = str(chunk_size)
 
-            async with open(full_path, "rb") as f:
+            async with aiofiles.open(full_path, "rb") as f:
                 await f.seek(start)
                 chunk = await f.read(chunk_size)
                 return web.Response(body=chunk, headers=headers, status=206)

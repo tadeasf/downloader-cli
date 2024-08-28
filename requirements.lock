@@ -10,6 +10,8 @@
 #   universal: false
 
 -e file:.
+aiofiles==24.1.0
+    # via downloader-cli
 aiohappyeyeballs==2.4.0
     # via aiohttp
 aiohttp==3.10.5
@@ -45,8 +47,6 @@ pyaml==24.7.0
     # via downloader-cli
 pygments==2.18.0
     # via rich
-python-dotenv==1.0.1
-    # via downloader-cli
 pyyaml==6.0.2
     # via pyaml
 requests==2.32.3
