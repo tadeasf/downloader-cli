@@ -410,7 +410,9 @@ def start_http_server(directories: List[Path], ip: str, port: int):
     # Calculate file info at startup
     file_info = []
     for directory in directories:
-        file_info.extend([get_file_info(f) for f in directory.glob("*") if f.is_file()])
+        file_info.extend(
+            [get_file_info(f, directory) for f in directory.glob("*") if f.is_file()]
+        )
     file_info.sort(key=lambda x: x["created_at"], reverse=True)
     app.state.file_info = file_info
 
