@@ -24,6 +24,7 @@ from .utils.config import get_playlist_file
 from .commands.generate_playlist import main as generate_playlist_main
 from .commands.podman_run import podman_run
 from .commands.mpv import mpv
+from .commands.serve_watch_playlist import serve_watch_playlist
 from typing import List
 
 install_rich_traceback()
@@ -120,6 +121,12 @@ def get_directory() -> Path:
         completer=PathCompleter(),
     )
     return Path(directory).expanduser().resolve()
+
+
+@app.command()
+def serve_and_watch():
+    """Serve a directory of MP4 files and generate a playlist."""
+    serve_watch_playlist()
 
 
 app.command()(podman_run)
