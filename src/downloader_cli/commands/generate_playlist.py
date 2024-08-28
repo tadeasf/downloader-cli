@@ -30,6 +30,8 @@ from ..utils.config import get_config_value
 import subprocess
 import logging
 from datetime import datetime
+import asyncio
+from functools import lru_cache
 
 logging.basicConfig(level=logging.DEBUG)
 logger = logging.getLogger(__name__)
@@ -137,6 +139,7 @@ def generate_m3u8(
     return playlist_path
 
 
+@lru_cache(maxsize=1000)
 def get_file_info(file_path: Path) -> dict:
     stat = file_path.stat()
     file_info = {
@@ -174,13 +177,21 @@ def get_file_info(file_path: Path) -> dict:
     return file_info
 
 
+async def calculate_file_info(directories: List[Path]):
+    file_info_list = []
+    for directory in directories:
+        for file_path in directory.rglob("*"):
+            if (
+                file_path.is_file()
+                and file_path.suffix.lower() in VIDEO_EXTENSIONS.union(IMAGE_EXTENSIONS)
+            ):
+                file_info_list.append(get_file_info(file_path))
+    return sorted(file_info_list, key=lambda x: x["created_at"], reverse=True)
+
+
 async def handle_root_request(request):
     directories = request.app.state.directories
-    files = []
-    for directory in directories:
-        files.extend([get_file_info(f) for f in directory.glob("*") if f.is_file()])
-
-    files.sort(key=lambda x: x["created_at"], reverse=True)
+    files = request.app.state.file_info  # Use pre-calculated file info
 
     css = """
     <style>
@@ -222,11 +233,93 @@ async def handle_root_request(request):
         th {
             background-color: #313244;
             color: #cba6f7;
+            cursor: pointer;
+        }
+        th:hover {
+            background-color: #45475a;
         }
         tr:hover {
             background-color: #313244;
         }
+        .file-link {
+            color: #cdd6f4;
+            text-decoration: none;
+        }
+        .file-link:hover {
+            text-decoration: underline;
+        }
     </style>
+    """
+
+    javascript = """
+    <script>
+    function sortTable(n) {
+        var table, rows, switching, i, x, y, shouldSwitch, dir, switchcount = 0;
+        table = document.getElementById("fileTable");
+        switching = true;
+        dir = "asc";
+        while (switching) {
+            switching = false;
+            rows = table.rows;
+            for (i = 1; i < (rows.length - 1); i++) {
+                shouldSwitch = false;
+                x = rows[i].getElementsByTagName("TD")[n];
+                y = rows[i + 1].getElementsByTagName("TD")[n];
+                if (dir == "asc") {
+                    if (n === 1) { // Size column
+                        if (Number(x.innerHTML.split(' ')[0]) > Number(y.innerHTML.split(' ')[0])) {
+                            shouldSwitch = true;
+                            break;
+                        }
+                    } else if (n === 3) { // Duration column
+                        if (x.innerHTML === 'N/A') continue;
+                        if (y.innerHTML === 'N/A') {
+                            shouldSwitch = true;
+                            break;
+                        }
+                        if (x.innerHTML > y.innerHTML) {
+                            shouldSwitch = true;
+                            break;
+                        }
+                    } else if (x.innerHTML.toLowerCase() > y.innerHTML.toLowerCase()) {
+                        shouldSwitch = true;
+                        break;
+                    }
+                } else if (dir == "desc") {
+                    if (n === 1) { // Size column
+                        if (Number(x.innerHTML.split(' ')[0]) < Number(y.innerHTML.split(' ')[0])) {
+                            shouldSwitch = true;
+                            break;
+                        }
+                    } else if (n === 3) { // Duration column
+                        if (y.innerHTML === 'N/A') continue;
+                        if (x.innerHTML === 'N/A') {
+                            shouldSwitch = true;
+                            break;
+                        }
+                        if (x.innerHTML < y.innerHTML) {
+                            shouldSwitch = true;
+                            break;
+                        }
+                    } else if (x.innerHTML.toLowerCase() < y.innerHTML.toLowerCase()) {
+                        shouldSwitch = true;
+                        break;
+                    }
+                }
+            }
+            if (shouldSwitch) {
+                rows[i].parentNode.insertBefore(rows[i + 1], rows[i]);
+                switching = true;
+                switchcount ++;
+            } else {
+                if (switchcount == 0 && dir == "asc") {
+                    dir = "desc";
+                    switching = true;
+                }
+            }
+        }
+    }
+    </script>
     """
 
     content = f"""
@@ -237,6 +330,7 @@ async def handle_root_request(request):
         <meta name="viewport" content="width=device-width, initial-scale=1.0">
         <title>File Server</title>
         {css}
+        {javascript}
     </head>
     <body>
         <h1>🚀 File Server</h1>
@@ -244,19 +338,19 @@ async def handle_root_request(request):
             <a href="/playlist.m3u8" download><button class="button">⬇️ Download Playlist</button></a>
             <a href="/raw-playlist"><button class="button">👁️ View Raw Playlist</button></a>
         </div>
-        <table>
+        <table id="fileTable">
             <tr>
-                <th>File Name</th>
-                <th>Size</th>
-                <th>Created At</th>
-                <th>Duration</th>
+                <th onclick="sortTable(0)">File Name</th>
+                <th onclick="sortTable(1)">Size</th>
+                <th onclick="sortTable(2)">Created At</th>
+                <th onclick="sortTable(3)">Duration</th>
             </tr>
     """
 
     for file in files:
         content += f"""
             <tr>
-                <td>{html_module.escape(file['name'])}</td>
+                <td><a href="/{file['name']}" target="_blank" class="file-link">{html_module.escape(file['name'])}</a></td>
                 <td>{file['size'] // 1024 // 1024} MB</td>
                 <td>{file['created_at']}</td>
                 <td>{file.get('duration', 'N/A')}</td>
@@ -316,6 +410,13 @@ def start_http_server(directories: List[Path], ip: str, port: int):
         middleware=middleware,
     )
     app.state.directories = directories
+
+    # Calculate file info at startup
+    file_info = []
+    for directory in directories:
+        file_info.extend([get_file_info(f) for f in directory.glob("*") if f.is_file()])
+    file_info.sort(key=lambda x: x["created_at"], reverse=True)
+    app.state.file_info = file_info
 
     logger.info(f"Serving at http://{ip}:{port}")
     logger.info(
