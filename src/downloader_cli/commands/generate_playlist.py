@@ -24,6 +24,58 @@ import mimetypes
 import aiofiles
 from datetime import datetime
 
+VIDEO_EXTENSIONS = {
+    ".mp4",
+    ".avi",
+    ".mov",
+    ".mkv",
+    ".wmv",
+    ".flv",
+    ".webm",
+    ".m4v",
+    ".mpg",
+    ".mpeg",
+    ".3gp",
+    ".3g2",
+    ".gif",
+    ".ts",
+    ".vob",
+    ".ogv",
+    ".drc",
+    ".gifv",
+    ".mng",
+    ".qt",
+    ".yuv",
+    ".rm",
+    ".rmvb",
+    ".asf",
+    ".amv",
+    ".m2v",
+    ".svi",
+    ".m2ts",
+    ".mts",
+    ".mxf",
+    ".roq",
+    ".nsv",
+    ".f4v",
+    ".f4p",
+    ".f4a",
+    ".f4b",
+}
+
+IMAGE_EXTENSIONS = {
+    ".jpg",
+    ".jpeg",
+    ".png",
+    ".webp",
+    ".heic",
+    ".heif",
+    ".bmp",
+    ".tiff",
+    ".tif",
+    ".gif",
+}
+
 
 def get_public_ip() -> str:
     try:
@@ -45,9 +97,20 @@ def validate_ip(ip: str) -> str:
 def generate_m3u8(directory: Path, ip: str, port: int, use_localhost: bool) -> str:
     playlist_content = "#EXTM3U\n"
     host = "localhost" if use_localhost else ip
+    video_files = []
+    image_files = []
+
     for file in sorted(directory.glob("*")):
         if file.is_file() and file.name != "playlist.m3u8":
-            playlist_content += f"http://{host}:{port}/{file.name}\n"
+            ext = file.suffix.lower()
+            if ext in VIDEO_EXTENSIONS:
+                video_files.append(file)
+            elif ext in IMAGE_EXTENSIONS:
+                image_files.append(file)
+
+    # Add video files to the playlist
+    for file in video_files:
+        playlist_content += f"http://{host}:{port}/{file.name}\n"
 
     playlist_path = directory / "playlist.m3u8"
     with open(playlist_path, "w") as f:
