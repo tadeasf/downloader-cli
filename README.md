@@ -25,7 +25,7 @@ A command-line interface tool for downloading and managing video playlists using
 1. Install Rye if you haven't already:
 
    ```sh
-   curl -sSf https://rye-up.com/get | bash
+   curl -sSf https://rye.astral.sh/get | bash
    ```
 
 2. Clone the repository:
