@@ -24,6 +24,7 @@ from .utils.config import get_playlist_file
 from .commands.generate_playlist import main as generate_playlist_main
 from .commands.podman_run import podman_run
 from .commands.mpv import mpv
+from typing import List
 
 install_rich_traceback()
 
@@ -89,8 +90,11 @@ def download(
 
 @app.command()
 def generate_playlist(
-    directory: Path = typer.Option(
-        None, "--directory", "-d", help="Directory containing the files"
+    directories: List[Path] = typer.Option(
+        None,
+        "--directory",
+        "-d",
+        help="Directories containing the files (can be specified multiple times)",
     ),
     ip: str = typer.Option(None, "--ip", help="IP to bind the server to (optional)"),
     port: int = typer.Option(8000, "--port", "-p", help="Port to serve the files"),
@@ -98,15 +102,16 @@ def generate_playlist(
         False, "--localhost", help="Use localhost instead of host IP"
     ),
 ):
-    """Generate an M3U8 playlist and serve the files via HTTP."""
-    if directory is None:
-        directory = get_directory()
+    """Generate an M3U8 playlist from multiple directories and serve the files via HTTP."""
+    if directories is None:
+        directories = [get_directory()]
 
-    if not directory.is_dir():
-        typer.echo(f"Error: {directory} is not a valid directory.")
-        raise typer.Exit(code=1)
+    for directory in directories:
+        if not directory.is_dir():
+            typer.echo(f"Error: {directory} is not a valid directory.")
+            raise typer.Exit(code=1)
 
-    generate_playlist_main(directory, ip, port, use_localhost)
+    generate_playlist_main(directories, ip, port, use_localhost)
 
 
 def get_directory() -> Path:

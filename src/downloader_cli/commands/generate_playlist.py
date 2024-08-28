@@ -12,21 +12,20 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-import os
 import typer
 from pathlib import Path
 import ipaddress
 import requests
 from ..utils.network import get_host_ip
 from aiohttp import web
-from aiohttp_cors import setup as cors_setup, ResourceOptions
-from ..utils.config import get_config_value
 import asyncio
 import mimetypes
 import aiofiles
 from datetime import datetime
 import logging
-import html
+from typing import List
+from aiohttp_cors import setup as cors_setup, ResourceOptions
+from ..utils.config import get_config_value
 
 logging.basicConfig(level=logging.DEBUG)
 logger = logging.getLogger(__name__)
@@ -101,29 +100,39 @@ def validate_ip(ip: str) -> str:
         raise typer.BadParameter("Invalid IP address")
 
 
-def generate_m3u8(directory: Path, ip: str, port: int, use_localhost: bool) -> str:
+def generate_m3u8(
+    directories: List[Path], ip: str, port: int, use_localhost: bool
+) -> str:
     playlist_content = "#EXTM3U\n"
     host = "localhost" if use_localhost else ip
     video_files = []
 
-    logger.debug(f"Scanning directory: {directory}")
-    for file in sorted(directory.glob("*")):
-        if file.is_file() and file.name != "playlist.m3u8":
-            ext = file.suffix.lower()
-            if ext in VIDEO_EXTENSIONS:
-                video_files.append(file)
-                logger.debug(f"Added video file to playlist: {file}")
+    for directory in directories:
+        logger.debug(f"Scanning directory: {directory}")
+        for file in sorted(directory.glob("*")):
+            if file.is_file() and file.name != "playlist.m3u8":
+                ext = file.suffix.lower()
+                if ext in VIDEO_EXTENSIONS:
+                    video_files.append(file)
+                    logger.debug(f"Added video file to playlist: {file}")
 
     # Add video files to the playlist
     for file in video_files:
-        playlist_content += f"http://{host}:{port}/{file.name}\n"
+        relative_path = file.relative_to(directories[0].parent)
+        playlist_content += f"http://{host}:{port}/{relative_path}\n"
 
-    playlist_path = directory / "playlist.m3u8"
+    playlist_path = directories[0] / "playlist.m3u8"
     with open(playlist_path, "w") as f:
         f.write(playlist_content)
 
     logger.debug(f"Generated playlist at: {playlist_path}")
     return str(playlist_path)
+
+
+async def log_access(request, file_path):
+    client_ip = request.remote
+    timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    print(f"[{timestamp}] Client IP: {client_ip} accessed file: {file_path}")
 
 
 def get_whitelisted_ips():
@@ -140,41 +149,31 @@ async def check_ip_whitelist(request, handler):
     return await handler(request)
 
 
-async def log_access(request, file_path):
-    client_ip = request.remote
-    timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-    print(f"[{timestamp}] Client IP: {client_ip} accessed file: {file_path}")
-
-
 async def handle_root_request(request):
-    directory = request.app["directory"]
-    files = sorted(directory.glob("*"))
+    directories = request.app["directories"]
+    html_content = "<html><body><h1>File List</h1>"
 
-    video_files = [
-        f for f in files if f.is_file() and f.suffix.lower() in VIDEO_EXTENSIONS
-    ]
-    image_files = [
-        f for f in files if f.is_file() and f.suffix.lower() in IMAGE_EXTENSIONS
-    ]
-
-    html_content = "<html><body>"
-    html_content += "<h1>Playlist</h1>"
-    html_content += '<p><a href="/playlist.m3u8">playlist.m3u8</a></p>'
-    html_content += "<h1>Video Files</h1>"
-    html_content += "<ul>"
-    for file in video_files:
-        html_content += (
-            f'<li><a href="/{html.escape(file.name)}">{html.escape(file.name)}</a></li>'
-        )
+    html_content += "<h2>Video Files:</h2><ul>"
+    for directory in directories:
+        for file in sorted(directory.glob("*")):
+            if file.is_file() and file.suffix.lower() in VIDEO_EXTENSIONS:
+                relative_path = file.relative_to(directories[0].parent)
+                html_content += (
+                    f'<li><a href="/{relative_path}">{relative_path}</a></li>'
+                )
     html_content += "</ul>"
 
-    html_content += "<h1>Image Files</h1>"
-    html_content += "<ul>"
-    for file in image_files:
-        html_content += (
-            f'<li><a href="/{html.escape(file.name)}">{html.escape(file.name)}</a></li>'
-        )
+    html_content += "<h2>Image Files:</h2><ul>"
+    for directory in directories:
+        for file in sorted(directory.glob("*")):
+            if file.is_file() and file.suffix.lower() in IMAGE_EXTENSIONS:
+                relative_path = file.relative_to(directories[0].parent)
+                html_content += (
+                    f'<li><a href="/{relative_path}">{relative_path}</a></li>'
+                )
     html_content += "</ul>"
+
+    html_content += f'<p><a href="/playlist.m3u8">Download Playlist</a></p>'
     html_content += "</body></html>"
 
     return web.Response(text=html_content, content_type="text/html")
@@ -182,21 +181,20 @@ async def handle_root_request(request):
 
 async def handle_file_request(request):
     file_path = request.match_info["file_path"]
-    full_path = os.path.join(str(request.app["directory"]), file_path)
+    directories = request.app["directories"]
 
-    logger.debug(f"Requested file: {file_path}")
-    logger.debug(f"Full path: {full_path}")
+    for directory in directories:
+        full_path = directory.parent / file_path
+        if full_path.exists() and full_path.is_file():
+            await log_access(request, file_path)
+            return await serve_file(request, full_path)
 
-    await log_access(request, file_path)
+    return web.Response(status=404, text="File not found")
 
-    if not os.path.exists(full_path) or not os.path.isfile(full_path):
-        logger.error(f"File not found: {full_path}")
-        return web.Response(status=404, text="File not found")
 
-    file_size = os.path.getsize(full_path)
-    mime_type, _ = mimetypes.guess_type(full_path)
-
-    logger.debug(f"File size: {file_size}, MIME type: {mime_type}")
+async def serve_file(request, full_path):
+    file_size = full_path.stat().st_size
+    mime_type, _ = mimetypes.guess_type(str(full_path))
 
     headers = {
         "Content-Type": mime_type or "application/octet-stream",
@@ -225,9 +223,9 @@ async def handle_file_request(request):
     return web.FileResponse(full_path, headers=headers)
 
 
-async def start_http_server(directory: Path, ip: str, port: int):
+async def start_http_server(directories: List[Path], ip: str, port: int):
     app = web.Application(middlewares=[check_ip_whitelist])
-    app["directory"] = directory
+    app["directories"] = directories
     app.router.add_get("/", handle_root_request)
     app.router.add_get("/{file_path:.*}", handle_file_request)
 
@@ -253,7 +251,9 @@ async def start_http_server(directory: Path, ip: str, port: int):
     await site.start()
 
     logger.info(f"Serving at http://{ip}:{port}")
-    logger.info(f"Serving files from directory: {directory}")
+    logger.info(
+        f"Serving files from directories: {', '.join(str(d) for d in directories)}"
+    )
     logger.info(f"Playlist available at http://{ip}:{port}/playlist.m3u8")
     logger.info(f"Whitelisted IPs: {', '.join(get_whitelisted_ips())}")
     print("Access log:")
@@ -264,8 +264,15 @@ async def start_http_server(directory: Path, ip: str, port: int):
 
 
 def main(
-    directory: Path = typer.Option(
-        ..., "--directory", "-d", help="Directory containing the files"
+    directories: List[Path] = typer.Option(
+        ...,
+        "--directory",
+        "-d",
+        help="Directories containing the files (can be specified multiple times)",
+        exists=True,
+        file_okay=False,
+        dir_okay=True,
+        resolve_path=True,
     ),
     ip: str = typer.Option(None, "--ip", help="IP to bind the server to (optional)"),
     port: int = typer.Option(8000, "--port", "-p", help="Port to serve the files"),
@@ -273,7 +280,7 @@ def main(
         False, "--localhost", help="Use localhost instead of host IP"
     ),
 ):
-    """Generate an M3U8 playlist and serve the files via HTTP."""
+    """Generate an M3U8 playlist from multiple directories and serve the files via HTTP."""
     if use_localhost:
         ip = "localhost"
     elif ip is None:
@@ -281,10 +288,9 @@ def main(
     else:
         ip = validate_ip(ip)
 
-    directory = Path(directory).resolve()
-    logger.info(f"Using directory: {directory}")
+    logger.info(f"Using directories: {', '.join(str(d) for d in directories)}")
 
-    playlist_path = generate_m3u8(directory, ip, port, use_localhost)
+    playlist_path = generate_m3u8(directories, ip, port, use_localhost)
     typer.echo(f"Generated playlist: {playlist_path}")
     typer.echo(f"Playlist URL: http://{ip}:{port}/playlist.m3u8")
 
@@ -292,7 +298,7 @@ def main(
     typer.echo("Press CTRL+C to stop the server")
 
     try:
-        asyncio.run(start_http_server(directory, ip, port))
+        asyncio.run(start_http_server(directories, ip, port))
     except KeyboardInterrupt:
         typer.echo("Server stopped")
 
