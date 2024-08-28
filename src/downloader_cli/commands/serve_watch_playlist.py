@@ -1,4 +1,3 @@
-import os
 from pathlib import Path
 from fastapi import FastAPI, Request
 from fastapi.responses import FileResponse, HTMLResponse
@@ -73,7 +72,7 @@ def serve_watch_playlist():
             </head>
             <body>
                 <h1>Video Playlist</h1>
-                <a href="/{playlist_path.name}">Download Playlist</a>
+                <a href="/playlist">Download Playlist</a>
                 <ul>
                     {video_list}
                 </ul>
@@ -81,9 +80,16 @@ def serve_watch_playlist():
         </html>
         """)
 
-    @app.get("/{playlist_path.name}")
+    @app.get("/playlist")
     async def get_playlist():
-        return FileResponse(playlist_path)
+        return FileResponse(playlist_path, filename=playlist_path.name)
+
+    @app.get("/videos/{file_path:path}")
+    async def get_video(file_path: str):
+        full_path = directory / file_path
+        if full_path.is_file():
+            return FileResponse(full_path)
+        return {"error": "File not found"}, 404
 
     print(f"Starting server at http://{ip}:{port}")
     uvicorn.run(app, host="0.0.0.0", port=port)
