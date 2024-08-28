@@ -21,6 +21,8 @@ from ..utils.network import get_host_ip
 from starlette.applications import Starlette
 from starlette.responses import HTMLResponse, FileResponse, PlainTextResponse
 from starlette.routing import Route
+from starlette.middleware import Middleware
+from starlette.middleware.cors import CORSMiddleware
 import uvicorn
 import mimetypes
 import logging
@@ -167,36 +169,25 @@ async def handle_file_request(request):
     return PlainTextResponse("File not found", status_code=404)
 
 
-def check_ip_whitelist(request):
-    client_ip = request.client.host
-    whitelisted_ips = get_whitelisted_ips()
-
-    if not whitelisted_ips or client_ip in whitelisted_ips:
-        return True
-    else:
-        return False
-
-
-async def ip_whitelist_middleware(request, call_next):
-    if not check_ip_whitelist(request):
-        return PlainTextResponse("Access denied", status_code=403)
-    response = await call_next(request)
-    return response
-
-
 def start_http_server(directories: List[Path], ip: str, port: int):
     routes = [
         Route("/", handle_root_request),
         Route("/{file_path:path}", handle_file_request),
     ]
 
+    whitelisted_ips = get_whitelisted_ips()
+    middleware = [
+        Middleware(
+            CORSMiddleware,
+            allow_origins=whitelisted_ips if whitelisted_ips else ["*"],
+            allow_methods=["*"],
+            allow_headers=["*"],
+        ),
+    ]
+
     app = Starlette(
         routes=routes,
-        middleware=[
-            {
-                "middleware": ip_whitelist_middleware,
-            }
-        ],
+        middleware=middleware,
     )
     app.state.directories = directories
 
@@ -205,11 +196,10 @@ def start_http_server(directories: List[Path], ip: str, port: int):
         f"Serving files from directories: {', '.join(str(d) for d in directories)}"
     )
     logger.info(f"Playlist available at http://{ip}:{port}/playlist.m3u8")
-    whitelisted_ips = get_whitelisted_ips()
     if whitelisted_ips:
         logger.info(f"Whitelisted IPs: {', '.join(whitelisted_ips)}")
     else:
-        logger.info("No IP whitelist configured")
+        logger.info("No IP whitelist configured, allowing all origins")
     print("Access log:")
 
     uvicorn.run(app, host=ip, port=port)
