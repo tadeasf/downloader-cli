@@ -12,38 +12,26 @@
 -e file:.
 aiofiles==24.1.0
     # via downloader-cli
-aiohappyeyeballs==2.4.0
-    # via aiohttp
-aiohttp==3.10.5
-    # via aiohttp-cors
-    # via downloader-cli
-aiohttp-cors==0.7.0
-    # via downloader-cli
-aiosignal==1.3.1
-    # via aiohttp
-attrs==24.2.0
-    # via aiohttp
+anyio==4.4.0
+    # via starlette
 certifi==2024.7.4
     # via requests
 charset-normalizer==3.3.2
     # via requests
 click==8.1.7
     # via typer
-frozenlist==1.4.1
-    # via aiohttp
-    # via aiosignal
+    # via uvicorn
+h11==0.14.0
+    # via uvicorn
 idna==3.8
+    # via anyio
     # via requests
-    # via yarl
 ipaddress==1.0.23
     # via downloader-cli
 markdown-it-py==3.0.0
     # via rich
 mdurl==0.1.2
     # via markdown-it-py
-multidict==6.0.5
-    # via aiohttp
-    # via yarl
 prompt-toolkit==3.0.47
     # via downloader-cli
 pyaml==24.7.0
@@ -58,6 +46,10 @@ rich==13.8.0
     # via typer
 shellingham==1.5.4
     # via typer
+sniffio==1.3.1
+    # via anyio
+starlette==0.38.2
+    # via downloader-cli
 toml==0.10.2
     # via downloader-cli
 typer==0.12.5
@@ -66,9 +58,9 @@ typing-extensions==4.12.2
     # via typer
 urllib3==2.2.2
     # via requests
+uvicorn==0.30.6
+    # via downloader-cli
 watchdog==5.0.0
     # via downloader-cli
 wcwidth==0.2.13
     # via prompt-toolkit
-yarl==1.9.4
-    # via aiohttp
