@@ -61,7 +61,7 @@ def get_config_value(key: str) -> Any:
 
 def get_version_from_pyproject() -> str:
     pyproject_path = os.path.join(
-        os.path.dirname(__file__), "..", "..", "..", "pyproject.toml"
+        os.path.dirname(__file__), "/root/downloader-cli/pyproject.toml"
     )
     with open(pyproject_path, "r") as f:
         pyproject_data = toml.load(f)
